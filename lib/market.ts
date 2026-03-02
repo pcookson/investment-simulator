@@ -5,7 +5,7 @@
 // Expanded with ticker search, validation, and broader quote fetching in Epic 3.
 //
 // Provider: Alpha Vantage (free tier, 25 requests/day)
-// Endpoint:  GLOBAL_QUOTE — returns latest quote including previous close.
+// Endpoint:  GLOBAL_QUOTE — returns latest quote.
 // -----------------------------------------------------------------------------
 
 const ALPHA_VANTAGE_BASE = "https://www.alphavantage.co/query";
@@ -29,12 +29,14 @@ interface AlphaVantageGlobalQuote {
 /**
  * Fetch the most recent confirmed closing price for a ticker.
  *
- * Uses the "previous close" field from Alpha Vantage GLOBAL_QUOTE because it
- * is always a settled end-of-day price regardless of when during the trading
- * day this function is called. The live "price" field fluctuates intraday.
+ * Uses the "price" field ("05.") from Alpha Vantage GLOBAL_QUOTE. After market
+ * close and on weekends this equals the last session's official closing price.
+ * During market hours it is the live traded price (acceptable for V1 — can be
+ * refined in Story 3.1 with explicit market-hours detection if needed).
  *
- * This will be refined in Story 3.1 to handle weekends, holidays, and
- * market-hours detection more robustly.
+ * "previous close" ("08.") was intentionally avoided: it is the close from the
+ * day BEFORE the latest trading day, so on a weekend it returns Thursday's
+ * close rather than Friday's.
  */
 export async function getClosingPrice(ticker: string): Promise<number> {
   const apiKey = process.env.MARKET_DATA_API_KEY;
@@ -70,17 +72,17 @@ export async function getClosingPrice(ticker: string): Promise<number> {
   const quote = data["Global Quote"];
 
   // Alpha Vantage returns an empty "Global Quote" object for invalid tickers
-  if (!quote || !quote["08. previous close"] || !quote["01. symbol"]) {
+  if (!quote || !quote["05. price"] || !quote["01. symbol"]) {
     throw new MarketDataError(
       `No price data found for "${ticker}". The ticker may be invalid.`
     );
   }
 
-  const price = parseFloat(quote["08. previous close"]);
+  const price = parseFloat(quote["05. price"]);
 
   if (isNaN(price) || price <= 0) {
     throw new MarketDataError(
-      `Received invalid price data for ${ticker}: "${quote["08. previous close"]}"`
+      `Received invalid price data for ${ticker}: "${quote["05. price"]}"`
     );
   }
 
