@@ -1,8 +1,21 @@
-export default function Home() {
-  return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-white">
-      <h1 className="text-4xl font-bold tracking-tight text-black">Vesti</h1>
-      <p className="mt-3 text-lg text-gray-500">Coming soon</p>
-    </main>
-  );
+import { redirect } from "next/navigation";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
+
+// This page never renders content. It exists solely to redirect:
+//   • Authenticated users   → /dashboard
+//   • Unauthenticated users → /auth/signin
+//
+// The middleware also handles these redirects, but an explicit check here
+// ensures correct behaviour even if the middleware matcher is ever narrowed.
+export default async function RootPage() {
+  const supabase = await createServerSupabaseClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (user) {
+    redirect("/dashboard");
+  } else {
+    redirect("/auth/signin");
+  }
 }
