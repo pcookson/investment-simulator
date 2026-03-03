@@ -137,6 +137,40 @@ async function fetchCompanyName(
 }
 
 // ---------------------------------------------------------------------------
+// 2026 US stock market holidays (NYSE / NASDAQ)
+// Used by the cron job to skip non-trading days.
+// ---------------------------------------------------------------------------
+
+export const US_MARKET_HOLIDAYS_2026: string[] = [
+  "2026-01-01", // New Year's Day
+  "2026-01-19", // Martin Luther King Jr. Day
+  "2026-02-16", // Presidents' Day
+  "2026-04-03", // Good Friday (Easter is April 5)
+  "2026-05-25", // Memorial Day
+  "2026-06-19", // Juneteenth National Independence Day
+  "2026-07-03", // Independence Day observed (July 4 falls on Saturday)
+  "2026-09-07", // Labor Day
+  "2026-11-26", // Thanksgiving Day
+  "2026-12-25", // Christmas Day
+];
+
+/** Returns true if the given YYYY-MM-DD date is a US market holiday. */
+export function isMarketHoliday(ymd: string): boolean {
+  return US_MARKET_HOLIDAYS_2026.includes(ymd);
+}
+
+/**
+ * Returns true if the given YYYY-MM-DD date is a trading day
+ * (weekday and not a market holiday).
+ */
+export function isTradingDay(ymd: string): boolean {
+  const [year, month, day] = ymd.split("-").map(Number);
+  const dow = new Date(year, month - 1, day).getDay(); // 0=Sun, 6=Sat
+  if (dow === 0 || dow === 6) return false;
+  return !isMarketHoliday(ymd);
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 

@@ -73,6 +73,70 @@ export function formatExecutionDate(ymd: string): string {
   });
 }
 
+/**
+ * Returns today's date in Eastern Time as "YYYY-MM-DD".
+ * Used by the cron job to determine the trading date and snapshot date.
+ */
+export function getTodayET(): string {
+  const parts = new Intl.DateTimeFormat(ET_LOCALE, {
+    timeZone: ET_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const y = parts.find((p) => p.type === "year")!.value;
+  const m = parts.find((p) => p.type === "month")!.value;
+  const d = parts.find((p) => p.type === "day")!.value;
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * Returns the UTC ISO timestamp for today's 3:30 PM ET cutoff.
+ *
+ * Orders with submitted_at BEFORE this timestamp execute on today's cron run.
+ * Handles EST (UTC-5) and EDT (UTC-4) automatically via the Intl API.
+ *
+ * Technique: derive the current ET↔UTC offset from the wall-clock difference,
+ * then apply it to the constructed "today 15:30 local" Date.
+ */
+export function getCutoffISO(): string {
+  const now = new Date();
+
+  // Parse the ET wall clock time as if it were the server's local time.
+  // On a UTC server: if it is 22:05 UTC (EST, UTC-5), toLocaleString returns
+  // "3/2/2026, 5:05:00 PM" which new Date() parses as 17:05 UTC.
+  // The difference (22:05 - 17:05 = 5 h) is the ET→UTC offset.
+  const etAsLocal = new Date(
+    now.toLocaleString(ET_LOCALE, { timeZone: ET_TZ })
+  );
+  const offsetMs = now.getTime() - etAsLocal.getTime();
+
+  // Today's date components in ET
+  const parts = new Intl.DateTimeFormat(ET_LOCALE, {
+    timeZone: ET_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const year = parseInt(parts.find((p) => p.type === "year")!.value, 10);
+  const month = parseInt(parts.find((p) => p.type === "month")!.value, 10);
+  const day = parseInt(parts.find((p) => p.type === "day")!.value, 10);
+
+  // "Today 3:30 PM" as a local Date (on a UTC server this is treated as UTC)
+  const cutoffLocal = new Date(
+    year,
+    month - 1,
+    day,
+    CUTOFF_HOUR,
+    CUTOFF_MINUTE,
+    0,
+    0
+  );
+
+  // Shift by the ET offset to obtain the correct UTC instant
+  return new Date(cutoffLocal.getTime() + offsetMs).toISOString();
+}
+
 /** Format an ISO timestamp as "Mar 5 at 2:30 PM ET" for display. */
 export function formatSubmittedAt(iso: string): string {
   const d = new Date(iso);
