@@ -230,3 +230,72 @@ All trade execution happens in the cron job only — never execute trades in a u
 The S&P comparison is personal to each user's start date — never compare absolute values across users, always use the score differential
 Keep V1 scope tight — no shorting, no options, no margin
 The platform should feel like a serious financial product, not a game, even though it uses mock money
+
+
+V1.1 Upgrades — Fractional Trading & Reservations
+
+Overview
+Replace the whole-shares model with dollar-amount buys and fractional share support. Add a reservation system to prevent over-commitment of cash and shares across queued orders.
+
+Trade Model Changes
+
+Buys — user enters a dollar amount (e.g. $270). The exact share count is unknown at submission and is calculated by the cron job at execution: shares = dollar_amount / closing_price. The form still shows an estimated share count based on the current price (for reference only).
+
+Sells — user enters a share count, which may be fractional (e.g. 1.4026 shares). Proceeds are calculated at execution: proceeds = shares × closing_price.
+
+Schema Changes
+
+trades table:
+  Add dollar_amount decimal — populated for buys, null for sells
+  Make shares nullable — null for pending buys, filled in at cron execution; always set for sells
+  Replace the shares > 0 constraint with: (shares IS NOT NULL AND shares > 0) OR (dollar_amount IS NOT NULL AND dollar_amount > 0)
+
+portfolios table:
+  Add reserved_cash decimal default 0 — sum of dollar_amount across all pending buy orders for this user
+  Available cash = cash_balance - reserved_cash
+
+holdings table:
+  Add reserved_shares decimal default 0 — sum of shares across all pending sell orders for this ticker/user
+  Available shares = shares - reserved_shares
+
+Reservation Lifecycle
+
+Buy submitted: reserved_cash += dollar_amount
+Buy executed (cron): cash_balance -= dollar_amount, reserved_cash -= dollar_amount, shares computed and holdings upserted
+Buy cancelled: reserved_cash -= dollar_amount
+
+Sell submitted: reserved_shares += shares
+Sell executed (cron): cash_balance += shares × closing_price, holdings reduced, reserved_shares -= shares
+Sell cancelled: reserved_shares -= shares
+
+Implementation Notes
+
+The reservation check + trade insert must be atomic. Use a Postgres RPC function so that the available-cash check and the reservation increment happen in a single transaction, preventing race conditions from simultaneous submissions.
+
+The cron job must release reserved_cash / reserved_shares as part of each execution and cancellation. Consider adding a reconciliation step at the start of the cron run (reset reserved_cash to the sum of pending buy dollar_amounts, reset reserved_shares to the sum of pending sell shares) to self-heal any drift caused by crashes or bugs.
+
+Average cost basis calculation is unchanged. For a fractional buy: new_shares = dollar_amount / executed_price, and the weighted average formula still applies normally.
+
+Display: show fractional shares to 4 decimal places. Show dollar amounts to 2 decimal places.
+
+
+Dynamic Market Holiday Calendar (Finnhub)
+
+Replace the hardcoded US_MARKET_HOLIDAYS_2026 list in lib/market.ts with a live lookup from the Finnhub market holiday API.
+
+Endpoint: GET https://finnhub.io/api/v1/stock/market-holiday?exchange=US&token=<FINNHUB_API_KEY>
+
+Response shape:
+  exchange: string
+  timezone: string
+  data: Array<{ atDate: string, eventName: string, tradingHour: string }>
+
+atDate is YYYY-MM-DD. tradingHour is set on early-close days (e.g. Black Friday, Christmas Eve) — these are not full closures but are worth noting. For V1.1 treat any day with an entry in data as a non-trading day regardless of tradingHour.
+
+New environment variable: FINNHUB_API_KEY — add to .env.local and Vercel alongside the existing Alpha Vantage key.
+
+Implementation: fetch the holiday list once at the start of each cron run (not on every isTradingDay call). Cache the result in a module-level variable scoped to the function invocation. Pass the holiday Set into isTradingDay rather than reading from a hardcoded array.
+
+Failure handling: if the Finnhub request fails, fall back to the hardcoded list for the current year and log a warning. The cron job must not abort just because the holiday fetch failed.
+
+This also benefits the trade form's execution date display — getExecutionDate() in lib/dates.ts currently skips weekends but not holidays. With a live holiday list available, execution date estimates shown to the user will skip holidays correctly. For V1.1 this is a nice-to-have; for V1 the estimate being off by one day on a holiday is acceptable.
