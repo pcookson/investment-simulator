@@ -26,10 +26,6 @@ export type TradeResult =
       executionDate: string; // YYYY-MM-DD
     };
 
-export const INITIAL_TRADE_RESULT: TradeResult = {
-  success: false,
-  error: "",
-};
 
 // ---------------------------------------------------------------------------
 // submitTradeAction

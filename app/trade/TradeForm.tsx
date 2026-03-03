@@ -11,10 +11,9 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import Link from "next/link";
-import {
-  submitTradeAction,
-  INITIAL_TRADE_RESULT,
-} from "@/lib/trading";
+import { submitTradeAction } from "@/lib/trading";
+
+const INITIAL_TRADE_RESULT = { success: false as const, error: "" };
 import { formatExecutionDate } from "@/lib/dates";
 import type { HoldingRow } from "./page";
 
