@@ -32,6 +32,18 @@ function SubmitButton() {
 export function SignUpForm() {
   const [state, formAction] = useFormState(signUpAction, initialState);
 
+  if (state.confirmEmail) {
+    return (
+      <div className="rounded-md border border-gray-200 bg-gray-50 px-6 py-8 text-center">
+        <p className="text-lg font-semibold text-gray-900">Check your email</p>
+        <p className="mt-2 text-sm text-gray-500">
+          We sent a confirmation link to your inbox. Click it to activate your
+          account and get started.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <form action={formAction} className="space-y-5">
       {state.error && (

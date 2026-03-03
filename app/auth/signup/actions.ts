@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 
 export type SignUpState = {
   error: string | null;
+  confirmEmail?: boolean; // true when Supabase requires email confirmation before login
 };
 
 export async function signUpAction(
@@ -116,6 +117,12 @@ export async function signUpAction(
   }
 
   // ── Success ──────────────────────────────────────────────────────────────
+  // If email confirmation is enabled, Supabase returns session: null and the
+  // user must click the confirmation link before they can sign in.
+  if (!authData.session) {
+    return { error: null, confirmEmail: true };
+  }
+
   // redirect() throws a NEXT_REDIRECT — must not be inside try/catch.
   redirect("/dashboard");
 }

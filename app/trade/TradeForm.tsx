@@ -1,14 +1,14 @@
 "use client";
 
 // TradeForm — the interactive order form.
-// - Ticker input with 500 ms debounced validation via /api/ticker
+// - Ticker input validated on blur (single API call when user leaves the field)
 // - Buy / Sell toggle
 // - Shares input with live estimated value
 // - Displays available cash (buys) or shares held (sells)
 // - Submits via submitTradeAction server action
 // - Shows a success card on completion with execution date
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import Link from "next/link";
 import { submitTradeAction } from "@/lib/trading";
@@ -79,53 +79,45 @@ export function TradeForm({
   const [tradeType, setTradeType] = useState<"buy" | "sell">("buy");
   const [shares, setShares] = useState("");
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [, startTransition] = useTransition();
 
   // ---------------------------------------------------------------------------
-  // Ticker validation — debounced at 500 ms
+  // Ticker validation — fires once when the user leaves the field (onBlur)
   // ---------------------------------------------------------------------------
 
-  useEffect(() => {
-    const raw = tickerInput.trim();
-
+  function validateTicker(raw: string) {
     if (!raw) {
       setTickerStatus("idle");
       setTickerInfo(null);
       return;
     }
-
     setTickerStatus("loading");
     setTickerInfo(null);
-
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-
-    debounceRef.current = setTimeout(() => {
-      startTransition(async () => {
-        try {
-          const res = await fetch(
-            `/api/ticker?ticker=${encodeURIComponent(raw)}`
-          );
-          const data = await res.json();
-          if (!res.ok || data.error) {
-            setTickerStatus("invalid");
-            setTickerInfo(null);
-          } else {
-            setTickerStatus("valid");
-            setTickerInfo(data as TickerInfo);
-          }
-        } catch {
+    startTransition(async () => {
+      try {
+        const res = await fetch(
+          `/api/ticker?ticker=${encodeURIComponent(raw)}`
+        );
+        const data = await res.json();
+        if (!res.ok || data.error) {
           setTickerStatus("invalid");
           setTickerInfo(null);
+        } else {
+          setTickerStatus("valid");
+          setTickerInfo(data as TickerInfo);
         }
-      });
-    }, 500);
+      } catch {
+        setTickerStatus("invalid");
+        setTickerInfo(null);
+      }
+    });
+  }
 
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
+  // When the form is pre-filled from a URL param, validate once on mount.
+  useEffect(() => {
+    if (initialTicker) validateTicker(initialTicker.toUpperCase());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tickerInput]);
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Derived values
@@ -238,7 +230,12 @@ export function TradeForm({
           spellCheck={false}
           placeholder="e.g. AAPL"
           value={tickerInput}
-          onChange={(e) => setTickerInput(e.target.value.toUpperCase())}
+          onChange={(e) => {
+            setTickerInput(e.target.value.toUpperCase());
+            setTickerStatus("idle");
+            setTickerInfo(null);
+          }}
+          onBlur={() => validateTicker(tickerInput.trim())}
           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono uppercase focus:border-black focus:outline-none"
         />
         {/* Ticker feedback */}
