@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { Nav } from "@/components/ui/Nav";
 import { TradeFormWrapper } from "./TradeFormWrapper";
 
 export const metadata = {
@@ -13,7 +14,11 @@ export interface HoldingRow {
   shares: number;
 }
 
-export default async function TradePage() {
+export default async function TradePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ ticker?: string }>;
+}) {
   const supabase = await createServerSupabaseClient();
 
   const {
@@ -21,6 +26,8 @@ export default async function TradePage() {
   } = await supabase.auth.getUser();
 
   if (!user) redirect("/auth/signin");
+
+  const { ticker: initialTicker } = await searchParams;
 
   // Fetch cash balance
   const { data: portfolio } = await supabase
@@ -40,15 +47,20 @@ export default async function TradePage() {
   const holdings: HoldingRow[] = holdingsData ?? [];
 
   return (
-    <main className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white">
+      <Nav />
       <div className="mx-auto max-w-lg px-4 py-12">
         <h1 className="text-2xl font-bold text-black mb-1">Place an Order</h1>
         <p className="text-sm text-gray-500 mb-8">
           Orders execute at market close on the next trading day at or after
           your submission time.
         </p>
-        <TradeFormWrapper cashBalance={cashBalance} holdings={holdings} />
+        <TradeFormWrapper
+          cashBalance={cashBalance}
+          holdings={holdings}
+          initialTicker={initialTicker}
+        />
       </div>
-    </main>
+    </div>
   );
 }

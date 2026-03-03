@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { Nav } from "@/components/ui/Nav";
 import { PendingOrdersList } from "./PendingOrdersList";
 
 export const metadata = {
@@ -36,7 +37,8 @@ export default async function PendingOrdersPage() {
   const pending: PendingTrade[] = data ?? [];
 
   return (
-    <main className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white">
+      <Nav />
       <div className="mx-auto max-w-lg px-4 py-12">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-black">Pending Orders</h1>
@@ -62,6 +64,6 @@ export default async function PendingOrdersPage() {
           <PendingOrdersList trades={pending} />
         )}
       </div>
-    </main>
+    </div>
   );
 }

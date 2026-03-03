@@ -10,9 +10,10 @@ import type { HoldingRow } from "./page";
 interface TradeFormWrapperProps {
   cashBalance: number;
   holdings: HoldingRow[];
+  initialTicker?: string;
 }
 
-export function TradeFormWrapper({ cashBalance, holdings }: TradeFormWrapperProps) {
+export function TradeFormWrapper({ cashBalance, holdings, initialTicker }: TradeFormWrapperProps) {
   const [formKey, setFormKey] = useState(0);
 
   return (
@@ -20,6 +21,7 @@ export function TradeFormWrapper({ cashBalance, holdings }: TradeFormWrapperProp
       key={formKey}
       cashBalance={cashBalance}
       holdings={holdings}
+      initialTicker={initialTicker}
       onReset={() => setFormKey((k) => k + 1)}
     />
   );

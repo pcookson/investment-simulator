@@ -12,10 +12,10 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import Link from "next/link";
 import { submitTradeAction } from "@/lib/trading";
-
-const INITIAL_TRADE_RESULT = { success: false as const, error: "" };
 import { formatExecutionDate } from "@/lib/dates";
 import type { HoldingRow } from "./page";
+
+const INITIAL_TRADE_RESULT = { success: false as const, error: "" };
 
 // ---------------------------------------------------------------------------
 // SubmitButton — reads pending state from the form status context
@@ -53,18 +53,28 @@ interface TickerInfo {
 interface TradeFormProps {
   cashBalance: number;
   holdings: HoldingRow[];
+  initialTicker?: string;
   onReset: () => void;
 }
 
-export function TradeForm({ cashBalance, holdings, onReset }: TradeFormProps) {
+export function TradeForm({
+  cashBalance,
+  holdings,
+  initialTicker,
+  onReset,
+}: TradeFormProps) {
   const [formState, formAction] = useFormState(
     submitTradeAction,
     INITIAL_TRADE_RESULT
   );
 
-  // Local state
-  const [tickerInput, setTickerInput] = useState("");
-  const [tickerStatus, setTickerStatus] = useState<TickerStatus>("idle");
+  // Local state — seed ticker input from URL param if provided
+  const [tickerInput, setTickerInput] = useState(
+    initialTicker?.toUpperCase() ?? ""
+  );
+  const [tickerStatus, setTickerStatus] = useState<TickerStatus>(
+    initialTicker ? "loading" : "idle"
+  );
   const [tickerInfo, setTickerInfo] = useState<TickerInfo | null>(null);
   const [tradeType, setTradeType] = useState<"buy" | "sell">("buy");
   const [shares, setShares] = useState("");
