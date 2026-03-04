@@ -1,13 +1,13 @@
 // -----------------------------------------------------------------------------
 // lib/market.ts — Market data helpers
 //
-// Provider: Alpha Vantage (free tier, 25 requests/day)
-// Endpoints:
-//   GLOBAL_QUOTE   — latest price for any ticker
-//   SYMBOL_SEARCH  — company name lookup
+// Provider: Finnhub (free tier: 60 req/min, no daily cap)
+// Endpoints used:
+//   quote        — current/closing price for any ticker
+//   symbolSearch — company name lookup
 // -----------------------------------------------------------------------------
 
-const ALPHA_VANTAGE_BASE = "https://www.alphavantage.co/query";
+import finnhub from "finnhub";
 
 export class MarketDataError extends Error {
   constructor(message: string) {
@@ -16,20 +16,38 @@ export class MarketDataError extends Error {
   }
 }
 
-interface AlphaVantageGlobalQuote {
-  "Global Quote": {
-    "01. symbol": string;
-    "05. price": string;
-    "07. latest trading day": string;
-    "08. previous close": string;
-  };
+// ---------------------------------------------------------------------------
+// Finnhub response shapes
+// ---------------------------------------------------------------------------
+
+interface FinnhubQuote {
+  c: number;  // current price (= session closing price after market close)
+  pc: number; // previous close
 }
 
-interface AlphaVantageSymbolSearch {
-  bestMatches?: Array<{
-    "1. symbol": string;
-    "2. name": string;
-  }>;
+interface FinnhubSymbolMatch {
+  description: string;  // company / fund name
+  displaySymbol: string;
+  symbol: string;
+  type: string;
+}
+
+interface FinnhubSymbolSearchResult {
+  result?: FinnhubSymbolMatch[];
+}
+
+// Minimal typed interface for the methods we call
+interface FinnhubClient {
+  quote(
+    symbol: string,
+    cb: (err: Error | null, data: FinnhubQuote) => void
+  ): void;
+  // opts is required (pass {} to omit); exchange can be used to restrict results
+  symbolSearch(
+    q: string,
+    opts: { exchange?: string },
+    cb: (err: Error | null, data: FinnhubSymbolSearchResult) => void
+  ): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -44,7 +62,7 @@ export interface TickerInfo {
 
 // ---------------------------------------------------------------------------
 // In-memory cache for validateTicker results
-// Prevents hammering Alpha Vantage (25 req/day free tier) during form interaction.
+// Prevents hammering Finnhub (60 req/min free tier) during form interaction.
 // ---------------------------------------------------------------------------
 
 interface CacheEntry {
@@ -56,84 +74,69 @@ const tickerCache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 // ---------------------------------------------------------------------------
+// Client factory
+// DefaultApi takes the API key directly in its constructor.
+// ---------------------------------------------------------------------------
+
+function getClient(): FinnhubClient {
+  const apiKey = process.env.FINNHUB_DATA_API_KEY;
+  if (!apiKey) {
+    throw new MarketDataError(
+      "Missing environment variable: FINNHUB_DATA_API_KEY"
+    );
+  }
+  return new finnhub.DefaultApi(apiKey) as FinnhubClient;
+}
+
+// ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-function getApiKey(): string {
-  const apiKey = process.env.MARKET_DATA_API_KEY;
-  if (!apiKey) {
-    throw new MarketDataError(
-      "Missing environment variable: MARKET_DATA_API_KEY"
-    );
-  }
-  return apiKey;
+async function fetchGlobalQuote(ticker: string): Promise<number> {
+  const client = getClient();
+  return new Promise((resolve, reject) => {
+    client.quote(ticker, (error, data) => {
+      if (error) {
+        reject(
+          new MarketDataError(
+            `Failed to fetch price for ${ticker}: ${error.message}`
+          )
+        );
+        return;
+      }
+
+      // `c` is the current price; after market close it equals the session's
+      // official closing price. During market hours it reflects the live
+      // traded price (acceptable for V1 — same behaviour as before).
+      const price = data?.c;
+      if (!price || price <= 0) {
+        reject(
+          new MarketDataError(
+            `No price data found for "${ticker}". The ticker may be invalid.`
+          )
+        );
+        return;
+      }
+
+      resolve(price);
+    });
+  });
 }
 
-async function fetchGlobalQuote(
-  ticker: string,
-  apiKey: string
-): Promise<number> {
-  const url = new URL(ALPHA_VANTAGE_BASE);
-  url.searchParams.set("function", "GLOBAL_QUOTE");
-  url.searchParams.set("symbol", ticker);
-  url.searchParams.set("apikey", apiKey);
-
-  let res: Response;
-  try {
-    res = await fetch(url.toString(), { cache: "no-store" });
-  } catch {
-    throw new MarketDataError(
-      `Network error fetching price for ${ticker}. Check your connection.`
-    );
-  }
-
-  if (!res.ok) {
-    throw new MarketDataError(
-      `Market data request failed with status ${res.status}`
-    );
-  }
-
-  const data = (await res.json()) as AlphaVantageGlobalQuote;
-  const quote = data["Global Quote"];
-
-  if (!quote || !quote["05. price"] || !quote["01. symbol"]) {
-    throw new MarketDataError(
-      `No price data found for "${ticker}". The ticker may be invalid.`
-    );
-  }
-
-  const price = parseFloat(quote["05. price"]);
-  if (isNaN(price) || price <= 0) {
-    throw new MarketDataError(
-      `Received invalid price data for ${ticker}: "${quote["05. price"]}"`
-    );
-  }
-
-  return price;
-}
-
-async function fetchCompanyName(
-  ticker: string,
-  apiKey: string
-): Promise<string> {
-  const url = new URL(ALPHA_VANTAGE_BASE);
-  url.searchParams.set("function", "SYMBOL_SEARCH");
-  url.searchParams.set("keywords", ticker);
-  url.searchParams.set("apikey", apiKey);
-
-  try {
-    const res = await fetch(url.toString(), { cache: "no-store" });
-    if (!res.ok) return ticker;
-
-    const data = (await res.json()) as AlphaVantageSymbolSearch;
-    const match = data.bestMatches?.find(
-      (m) => m["1. symbol"].toUpperCase() === ticker.toUpperCase()
-    );
-    return match?.["2. name"] ?? ticker;
-  } catch {
-    // Name lookup is best-effort — fall back to ticker symbol
-    return ticker;
-  }
+async function fetchCompanyName(ticker: string): Promise<string> {
+  const client = getClient();
+  return new Promise((resolve) => {
+    client.symbolSearch(ticker, {}, (error, data) => {
+      if (error || !data?.result?.length) {
+        resolve(ticker); // best-effort — fall back to ticker symbol
+        return;
+      }
+      const match = data.result.find(
+        (m) => m.symbol.toUpperCase() === ticker.toUpperCase()
+      );
+      resolve(match?.description ?? ticker);
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -177,16 +180,15 @@ export function isTradingDay(ymd: string): boolean {
 /**
  * Fetch the most recent confirmed closing price for a ticker.
  *
- * Uses "05. price" from GLOBAL_QUOTE. After market close and on weekends this
- * equals the last session's official closing price. During market hours it is
- * the live traded price (acceptable for V1).
+ * Uses Finnhub's `quote.c` field. After market close and on weekends this
+ * equals the last session's official closing price. During market hours it
+ * is the live traded price (acceptable for V1).
  *
- * Not cached — always returns a fresh price. Used during sign-up and the cron
- * job where staleness is unacceptable.
+ * Not cached — always returns a fresh price. Used by the cron job and sign-up
+ * where staleness is unacceptable.
  */
 export async function getClosingPrice(ticker: string): Promise<number> {
-  const apiKey = getApiKey();
-  return fetchGlobalQuote(ticker.toUpperCase(), apiKey);
+  return fetchGlobalQuote(ticker.toUpperCase());
 }
 
 /**
@@ -200,8 +202,8 @@ export async function getSpyClosingPrice(): Promise<number> {
 /**
  * Validate a ticker and return its current price + company name.
  *
- * Calls GLOBAL_QUOTE and SYMBOL_SEARCH in parallel. Results are cached for
- * 5 minutes to minimise API calls during interactive form use.
+ * Calls quote and symbolSearch in parallel. Results are cached for 5 minutes
+ * to minimise API calls during interactive form use.
  *
  * Throws MarketDataError for invalid or unrecognised tickers.
  */
@@ -213,12 +215,10 @@ export async function validateTicker(rawTicker: string): Promise<TickerInfo> {
     return cached.data;
   }
 
-  const apiKey = getApiKey();
-
   // Fetch price (required) and name (best-effort) in parallel
   const [price, name] = await Promise.all([
-    fetchGlobalQuote(ticker, apiKey),
-    fetchCompanyName(ticker, apiKey),
+    fetchGlobalQuote(ticker),
+    fetchCompanyName(ticker),
   ]);
 
   const info: TickerInfo = { ticker, name, price };
