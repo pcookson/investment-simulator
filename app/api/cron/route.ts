@@ -287,11 +287,10 @@ async function fetchPrices(tickers: string[]): Promise<Map<string, number>> {
       );
     }
 
-    // Brief pause between requests — keeps us within Alpha Vantage free tier
-    // (5 req/min). For a portfolio project with < 25 distinct tickers this is
-    // sufficient; upgrade to a paid tier or batch API for larger scale.
+    // Brief pause between requests — keeps us within Finnhub free tier
+    // (60 req/min = 1 req/sec). 1 000 ms is conservative and safe.
     if (i < tickers.length - 1) {
-      await sleep(250);
+      await sleep(1000);
     }
   }
 
