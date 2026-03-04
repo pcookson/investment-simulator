@@ -211,10 +211,11 @@ Story 6.1 — Portfolio summary header — current portfolio value, S&P benchmar
 Story 6.2 — Performance chart — dual line chart (black = portfolio, green = S&P) from daily_snapshots data
 Story 6.3 — Holdings table — ticker, shares, avg cost, current value, gain/loss per position
 
-Epic 7: History & Leaderboard
+EEpic 7: History, Leaderboard & Holdings
 
 Story 7.1 — Trade history page — full log of executed trades sorted by date
 Story 7.2 — Leaderboard page — all users ranked by score, showing portfolio value, S&P value, and differential
+Story 7.3 — Holdings page — dedicated full page view of current positions with allocation breakdown, realized vs unrealized gains, and quick trade links
 
 Epic 8: UI Polish
 
